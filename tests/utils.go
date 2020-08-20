@@ -44,6 +44,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	netutils "k8s.io/utils/net"
@@ -4902,4 +4903,15 @@ func IsLauncherCapabilityValid(capability k8sv1.Capability) bool {
 		return true
 	}
 	return false
+}
+
+func checkDirectIOFlag(path string) bool {
+	// check if fs where disk.img file is located or block device
+	// support direct i/o
+	f, err := os.OpenFile(path, syscall.O_RDONLY|syscall.O_DIRECT, 0)
+	if err != nil && !os.IsNotExist(err) {
+		return false
+	}
+	defer f.Close()
+	return true
 }

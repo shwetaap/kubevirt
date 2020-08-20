@@ -1,0 +1,9 @@
+{
+    "storageClassLocal":       "nfs",
+    "storageClassHostPath":    "nfs",
+    "storageClassBlockVolume": "ocs-storagecluster-ceph-rbd",
+    "storageClassRhel":        "nfs",
+    "storageClassWindows":     "nfs",
+    "manageStorageClasses":    false 
+}
+

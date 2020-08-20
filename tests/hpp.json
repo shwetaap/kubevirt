@@ -1,0 +1,9 @@
+{
+    "storageClassLocal":       "hostpath-provisioner",
+    "storageClassHostPath":    "hostpath-provisioner",
+    "storageClassBlockVolume": "ocs-storagecluster-ceph-rbd",
+    "storageClassRhel":        "hostpath-provisioner",
+    "storageClassWindows":     "hostpath-provisioner",
+    "manageStorageClasses":    false 
+}
+
