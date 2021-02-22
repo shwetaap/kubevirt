@@ -321,7 +321,7 @@ var _ = Describe("[Serial][rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][leve
 		Expect(console.SafeExpectBatch(vmi, []expect.Batcher{
 			&expect.BSnd{S: "\n"},
 			&expect.BExp{R: console.PromptExpression},
-			&expect.BSnd{S: "stress --vm 1 --vm-bytes 800M --vm-keep --timeout 1600s&\n"},
+			&expect.BSnd{S: "stress --vm 1 --vm-bytes 600M --vm-keep --timeout 1600s&\n"},
 			&expect.BExp{R: console.PromptExpression},
 		}, 15)).To(Succeed(), "should run a stress test")
 		// give stress tool some time to trash more memory pages before returning control to next steps
@@ -1263,7 +1263,7 @@ var _ = Describe("[Serial][rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][leve
 				}
 				tests.UpdateKubeVirtConfigValueAndWait(cfg)
 			})
-			PIt("[test_id:2227] should abort a vmi migration without progress", func() {
+			FIt("[test_id:2227] should abort a vmi migration without progress", func() {
 				vmi := tests.NewRandomFedoraVMIWithGuestAgent()
 				vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse("1Gi")
 
@@ -1285,6 +1285,97 @@ var _ = Describe("[Serial][rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][leve
 
 				// check VMI, confirm migration state
 				confirmVMIPostMigrationFailed(vmi, migrationUID)
+
+				// delete VMI
+				By("Deleting the VMI")
+				Expect(virtClient.VirtualMachineInstance(vmi.Namespace).Delete(vmi.Name, &metav1.DeleteOptions{})).To(Succeed())
+
+				By("Waiting for VMI to disappear")
+				tests.WaitForVirtualMachineToDisappearWithTimeout(vmi, 240)
+			})
+
+			It("[test_id:] Migration Metrics exposed to prometheus during VM migration", func() {
+				vmi := tests.NewRandomFedoraVMIWithGuestAgent()
+				vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse("1Gi")
+
+				var pod *k8sv1.Pod
+				var metricsIPs []string
+				var family k8sv1.IPFamily = k8sv1.IPv4Protocol
+
+				By("Starting the VirtualMachineInstance")
+				vmi = runVMIAndExpectLaunch(vmi, 240)
+
+				By("Checking that the VirtualMachineInstance console has expected output")
+				Expect(console.LoginToFedora(vmi)).To(Succeed())
+
+				// Need to wait for cloud init to finnish and start the agent inside the vmi.
+				tests.WaitAgentConnected(virtClient, vmi)
+
+				vmiNodeOrig := vmi.Status.NodeName
+				fmt.Fprintf(GinkgoWriter, "VM node [%s]:\n", vmiNodeOrig)
+				By("Finding the prometheus endpoint")
+				pod, err = kubecli.NewVirtHandlerClient(virtClient).Namespace(flags.KubeVirtInstallNamespace).ForNode(vmiNodeOrig).Pod()
+				Expect(err).ToNot(HaveOccurred(), "Should find the virt-handler pod")
+				fmt.Fprintf(GinkgoWriter, "Virt-handler pod [%s]:\n", pod)
+				for _, ip := range pod.Status.PodIPs {
+					metricsIPs = append(metricsIPs, ip.IP)
+				}
+
+				fmt.Fprintf(GinkgoWriter, "Metrics Ip [%s]:\n", metricsIPs)
+				runStressTest(vmi)
+
+				// execute a migration, wait for finalized state
+				By("Starting the Migration")
+				migration := tests.NewRandomMigration(vmi.Name, vmi.Namespace)
+				migration = runAndCancelMigration(migration, vmi, 540)
+				migrationUID := string(migration.UID)
+
+				// check VMI, confirm migration state
+				confirmVMIPostMigrationAborted(vmi, migrationUID, 180)
+
+				if family == k8sv1.IPv6Protocol {
+					libnet.SkipWhenNotDualStackCluster(virtClient)
+				}
+
+				ip := getSupportedIP(metricsIPs, family)
+
+				fmt.Fprintf(GinkgoWriter, "Ip [%s]:\n", ip)
+				By("Scraping the Prometheus endpoint")
+				var metrics map[string]float64
+				var lines []string
+
+				Eventually(func() map[string]float64 {
+					//out := getKubevirtVMMetrics(ip)
+					metricsURL := prepareMetricsURL(ip, 8443)
+					out, _, err := tests.ExecuteCommandOnPodV2(virtClient,
+						pod,
+						"virt-handler",
+						[]string{
+							"curl",
+							"-L",
+							"-k",
+							metricsURL,
+						})
+					Expect(err).ToNot(HaveOccurred())
+					lines = takeMetricsWithPrefix(out, "kubevirt_migrate_vmi")
+					metrics, err = parseMetricsToMap(lines)
+					Expect(err).ToNot(HaveOccurred())
+					return metrics
+				}, 30*time.Second, 2*time.Second).ShouldNot(BeEmpty())
+
+				// troubleshooting helper
+				fmt.Fprintf(GinkgoWriter, "metrics [%s]:\nlines=%s\n%#v\n", "kubevirt_migrate_vmi", lines, metrics)
+				Expect(len(metrics)).To(BeNumerically(">=", float64(1.0)))
+				Expect(metrics).To(HaveLen(len(lines)))
+
+				By("Checking the collected metrics")
+				keys := getKeysFromMetrics(metrics)
+				for _, key := range keys {
+					value := metrics[key]
+					fmt.Fprintf(GinkgoWriter, "metric value was %f\n", value)
+					Expect(value).To(BeNumerically(">=", float64(0.0)))
+				}
+				//metrics := collectMetrics(ip, "kubevirt_vmi_memory_swap_")
 
 				// delete VMI
 				By("Deleting the VMI")

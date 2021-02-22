@@ -74,6 +74,7 @@ import (
 	domainerrors "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/errors"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/network"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/stats"
+	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/statsconv"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/util"
 )
 
@@ -128,6 +129,7 @@ type LibvirtDomainManager struct {
 	setGuestTimeContextPtr   *contextStore
 	ovmfPath                 string
 	networkCacheStoreFactory cache.InterfaceCacheFactory
+	migrateInfoStats         *stats.DomainJobInfo
 }
 
 type migrationDisks struct {
@@ -175,6 +177,7 @@ func NewLibvirtDomainManager(connection cli.Connection, virtShareDir string, not
 		agentData:                agentStore,
 		ovmfPath:                 ovmfPath,
 		networkCacheStoreFactory: cache.NewInterfaceCacheFactory(),
+		migrateInfoStats:         &stats.DomainJobInfo{},
 	}
 	manager.credManager = accesscredentials.NewManager(connection, &manager.domainModifyLock)
 
@@ -700,7 +703,7 @@ func getVMIMigrationDataSize(vmi *v1.VirtualMachineInstance) int64 {
 func liveMigrationMonitor(vmi *v1.VirtualMachineInstance, l *LibvirtDomainManager, options *cmdclient.MigrationOptions, migrationErr chan error) {
 
 	logger := log.Log.Object(vmi)
-
+	migrateInfo := stats.DomainJobInfo{OldDataProcessed: 0}
 	domName := api.VMINamespaceKeyFunc(vmi)
 	dom, err := l.virConn.LookupDomainByName(domName)
 	if err != nil {
@@ -717,6 +720,13 @@ func liveMigrationMonitor(vmi *v1.VirtualMachineInstance, l *LibvirtDomainManage
 	// update timeouts from migration config
 	progressTimeout := options.ProgressTimeout
 	completionTimeoutPerGiB := options.CompletionTimeoutPerGiB
+
+	stats, err := dom.GetJobInfo()
+	if err != nil {
+		logger.Reason(err).Error("failed to get domain job info")
+	}
+	log.Log.Infof("Debug: stats 	%v", stats.Type)
+	l.migrateInfoStats = &migrateInfo
 
 	acceptableCompletionTime := completionTimeoutPerGiB * getVMIMigrationDataSize(vmi)
 monitorLoop:
@@ -741,13 +751,46 @@ monitorLoop:
 			logger.Reason(err).Error("failed to get domain job info")
 			break
 		}
+		log.Log.Infof("Debug2: stats-type	%d", stats.Type)
+		log.Log.Infof("%d, %d, %d, %d, %d", libvirt.DOMAIN_JOB_UNBOUNDED, libvirt.DOMAIN_JOB_NONE, libvirt.DOMAIN_JOB_COMPLETED, libvirt.DOMAIN_JOB_CANCELLED, libvirt.DOMAIN_JOB_FAILED)
+
+		jobStatsInfo, err := dom.GetJobStats(0)
+		if err != nil {
+			logger.Reason(err).Error("failed to get domain stats job info")
+			break
+		}
+		log.Log.Infof("Debug Job Stats: %d", jobStatsInfo.DataRemaining)
+		log.Log.Infof("Debug Job Stats: %d", jobStatsInfo.DataProcessed)
+		log.Log.Infof("Debug Job Stats: %d", jobStatsInfo.MemDirtyRate)
+		log.Log.Infof("Debug Job Stats: %d", jobStatsInfo.Type)
 
 		remainingData := int64(stats.DataRemaining)
+		log.Log.Infof("Debug2 Job Info: stats-dataremaining %d", stats.DataRemaining)
+		log.Log.Infof("Debug2 Job Info: stats-dataprocessed %d", stats.DataProcessed)
+		log.Log.Infof("Debug2 Job Info: stats-memorydirtyrate %d", stats.MemDirtyRate)
+		log.Log.Infof("Debug2 Job Info: stats-type %d", stats.Type)
+
 		switch stats.Type {
 		case libvirt.DOMAIN_JOB_UNBOUNDED:
 			// Migration is running
 			now := time.Now().UTC().Unix()
 			elapsed := now - start
+
+			/*			l.migrateInfoStats.DataProcessed = jobStatsInfo.DataProcessed
+						l.migrateInfoStats.DataProcessedSet = jobStatsInfo.DataProcessedSet
+						l.migrateInfoStats.DataRemaining = jobStatsInfo.DataRemaining
+						l.migrateInfoStats.DataRemainingSet = jobStatsInfo.DataRemainingSet
+						l.migrateInfoStats.MemDirtyRate = jobStatsInfo.MemDirtyRate
+						l.migrateInfoStats.MemDirtyRateSet = jobStatsInfo.MemDirtyRateSet*/
+			l.migrateInfoStats = statsconv.Convert_libvirt_DomainJobInfo_To_stats_DomainJobInfo(jobStatsInfo)
+			l.migrateInfoStats.DataTransferRateSet = true
+			l.migrateInfoStats.DataTransferRate = float64(l.migrateInfoStats.DataProcessed-l.migrateInfoStats.OldDataProcessed) / float64(now-lastProgressUpdate)
+			log.Log.Infof("Debug Job Migrate stats-dataremaining: %d", l.migrateInfoStats.DataRemaining)
+			log.Log.Infof("Debug Job Migrate stats-dataprocessed: %d", l.migrateInfoStats.DataProcessed)
+			log.Log.Infof("Debug Job Migrate stats-dataprocessed: %d", l.migrateInfoStats.OldDataProcessed)
+			log.Log.Infof("Debug Job Migrate stats-memorydirtyrate: %d", l.migrateInfoStats.MemDirtyRate)
+			log.Log.Infof("Debug Job Migrate stats-datatransferrate: %f", l.migrateInfoStats.DataTransferRate)
+			l.migrateInfoStats.OldDataProcessed = l.migrateInfoStats.DataProcessed
 
 			if (progressWatermark == 0) ||
 				(progressWatermark > remainingData) {
@@ -807,6 +850,12 @@ monitorLoop:
 				l.setMigrationResult(vmi, true, fmt.Sprintf("Live migration is not completed after %d sec and has been aborted", acceptableCompletionTime), v1.MigrationAbortSucceeded)
 				break monitorLoop
 			}
+
+			// Calculate the Migration Data Transfer Rate
+			l.migrateInfoStats.DataProcessed = jobStatsInfo.DataProcessed
+			l.migrateInfoStats.DataRemaining = jobStatsInfo.DataRemaining
+			l.migrateInfoStats.MemDirtyRate = jobStatsInfo.MemDirtyRate
+			l.migrateInfoStats.OldDataProcessed = l.migrateInfoStats.DataProcessed
 
 		case libvirt.DOMAIN_JOB_NONE:
 			logger.Info("Migration job didn't start yet")
@@ -1934,7 +1983,7 @@ func (l *LibvirtDomainManager) GetDomainStats() ([]*stats.DomainStats, error) {
 	statsTypes := libvirt.DOMAIN_STATS_BALLOON | libvirt.DOMAIN_STATS_CPU_TOTAL | libvirt.DOMAIN_STATS_VCPU | libvirt.DOMAIN_STATS_INTERFACE | libvirt.DOMAIN_STATS_BLOCK
 	flags := libvirt.CONNECT_GET_ALL_DOMAINS_STATS_RUNNING
 
-	return l.virConn.GetDomainStats(statsTypes, flags)
+	return l.virConn.GetDomainStats(statsTypes, l.migrateInfoStats, flags)
 }
 
 func (l *LibvirtDomainManager) buildDevicesMetadata(vmi *v1.VirtualMachineInstance, dom cli.VirDomain) ([]cloudinit.DeviceData, error) {

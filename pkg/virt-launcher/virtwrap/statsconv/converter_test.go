@@ -54,12 +54,13 @@ var _ = Describe("StatsConverter", func() {
 		It("should handle empty input", func() {
 			in := &libvirt.DomainStats{}
 			inMem := []libvirt.DomainMemoryStat{}
+			inJobInfo := &stats.DomainJobInfo{}
 			out := stats.DomainStats{}
 			mockDomainIdent.EXPECT().GetName().Return("testName", nil)
 			mockDomainIdent.EXPECT().GetUUIDString().Return("testUUID", nil)
 			ident := DomainIdentifier(mockDomainIdent)
 
-			err := Convert_libvirt_DomainStats_to_stats_DomainStats(ident, in, inMem, &out)
+			err := Convert_libvirt_DomainStats_to_stats_DomainStats(ident, in, inMem, inJobInfo, &out)
 
 			Expect(err).To(BeNil())
 			Expect(out.Name).To(Equal("testName"))
@@ -69,17 +70,19 @@ var _ = Describe("StatsConverter", func() {
 		It("should handle valid input", func() {
 			in := &testStats[0]
 			inMem := []libvirt.DomainMemoryStat{}
+			inJobInfo := stats.DomainJobInfo{}
 			out := stats.DomainStats{}
 			mockDomainIdent.EXPECT().GetName().Return("testName", nil)
 			mockDomainIdent.EXPECT().GetUUIDString().Return("testUUID", nil)
 			ident := DomainIdentifier(mockDomainIdent)
 
-			err := Convert_libvirt_DomainStats_to_stats_DomainStats(ident, in, inMem, &out)
+			err := Convert_libvirt_DomainStats_to_stats_DomainStats(ident, in, inMem, &inJobInfo, &out)
 
 			Expect(err).To(BeNil())
 			// very very basic sanity check
 			Expect(out.Cpu).To(Not(BeNil()))
 			Expect(out.Memory).To(Not(BeNil()))
+			Expect(out.MigrateInfo).To(Not(BeNil()))
 			Expect(len(out.Vcpu)).To(Equal(len(testStats[0].Vcpu)))
 			Expect(len(out.Net)).To(Equal(len(testStats[0].Net)))
 			Expect(len(out.Block)).To(Equal(len(testStats[0].Block)))
@@ -88,12 +91,13 @@ var _ = Describe("StatsConverter", func() {
 		It("should convert valid input", func() {
 			in := &testStats[0]
 			inMem := []libvirt.DomainMemoryStat{}
+			inJobInfo := &stats.DomainJobInfo{}
 			out := stats.DomainStats{}
 			mockDomainIdent.EXPECT().GetName().Return("testName", nil)
 			mockDomainIdent.EXPECT().GetUUIDString().Return("testUUID", nil)
 			ident := DomainIdentifier(mockDomainIdent)
 
-			err := Convert_libvirt_DomainStats_to_stats_DomainStats(ident, in, inMem, &out)
+			err := Convert_libvirt_DomainStats_to_stats_DomainStats(ident, in, inMem, inJobInfo, &out)
 
 			Expect(err).To(BeNil())
 

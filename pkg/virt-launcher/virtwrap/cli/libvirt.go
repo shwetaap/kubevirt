@@ -59,7 +59,7 @@ type Connection interface {
 	// We add this helper to
 	// 1. avoid to expose to the client code the libvirt-specific return type, see docs in stats/ subpackage
 	// 2. transparently handling the addition of the memory stats, currently (libvirt 4.9) not handled by the bulk stats API
-	GetDomainStats(statsTypes libvirt.DomainStatsTypes, flags libvirt.ConnectGetAllDomainStatsFlags) ([]*stats.DomainStats, error)
+	GetDomainStats(statsTypes libvirt.DomainStatsTypes, l *stats.DomainJobInfo, flags libvirt.ConnectGetAllDomainStatsFlags) ([]*stats.DomainStats, error)
 }
 
 type Stream interface {
@@ -262,7 +262,7 @@ func (l *LibvirtConnection) GetAllDomainStats(statsTypes libvirt.DomainStatsType
 	return domStats, nil
 }
 
-func (l *LibvirtConnection) GetDomainStats(statsTypes libvirt.DomainStatsTypes, flags libvirt.ConnectGetAllDomainStatsFlags) ([]*stats.DomainStats, error) {
+func (l *LibvirtConnection) GetDomainStats(statsTypes libvirt.DomainStatsTypes, jobInfo *stats.DomainJobInfo, flags libvirt.ConnectGetAllDomainStatsFlags) ([]*stats.DomainStats, error) {
 	domStats, err := l.GetAllDomainStats(statsTypes, flags)
 	if err != nil {
 		return nil, err
@@ -284,13 +284,33 @@ func (l *LibvirtConnection) GetDomainStats(statsTypes libvirt.DomainStatsTypes, 
 			return list, err
 		}
 
+		/*jobInfo, err := domStat.Domain.GetJobInfo()
+		if err != nil {
+			return list, err
+		}
+
+		jobStatsInfo , err := domStat.Domain.GetJobStats(0)
+		if err != nil {
+			return list, err
+		}
+		log.Log.Infof("Debug Job Stats: %d", jobStatsInfo.DataRemaining)
+		log.Log.Infof("Debug Job Stats: %d", jobStatsInfo.DataProcessed)
+		log.Log.Infof("Debug Job Stats: %d", jobStatsInfo.MemDirtyRate)*/
+
 		stat := &stats.DomainStats{}
-		err = statsconv.Convert_libvirt_DomainStats_to_stats_DomainStats(statsconv.DomainIdentifier(domStat.Domain), &domStats[i], memStats, stat)
+		//statDomainJob := &stats.DomainJobInfo{}
+
+		err = statsconv.Convert_libvirt_DomainStats_to_stats_DomainStats(statsconv.DomainIdentifier(domStat.Domain), &domStats[i], memStats, jobInfo, stat)
 		if err != nil {
 			return list, err
 		}
 
 		list = append(list, stat)
+		log.Log.Infof("Debug: %d", list[0].MigrateInfo.DataRemaining)
+		log.Log.Infof("Debug: %d", list[0].MigrateInfo.DataProcessed)
+		log.Log.Infof("Debug: %d", list[0].MigrateInfo.MemDirtyRate)
+
+		domStat.Domain.Free()
 	}
 
 	return list, nil

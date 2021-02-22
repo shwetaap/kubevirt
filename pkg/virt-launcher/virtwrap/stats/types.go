@@ -53,6 +53,8 @@ type DomainStats struct {
 	Cpu *DomainStatsCPU
 	// new, see below
 	Memory *DomainStatsMemory
+	// new, see below
+	MigrateInfo *DomainJobInfo
 	// omitted from libvirt-go: Balloon
 	Vcpu  []DomainStatsVcpu
 	Net   []DomainStatsNet
@@ -147,4 +149,18 @@ type DomainStatsMemory struct {
 	SwapIn           uint64
 	SwapOutSet       bool
 	SwapOut          uint64
+}
+
+// mimic existing structs, but data is taken from
+// DomainJobInfo
+type DomainJobInfo struct {
+	DataProcessedSet    bool
+	DataProcessed       uint64
+	OldDataProcessed    uint64
+	DataRemainingSet    bool
+	DataRemaining       uint64
+	MemDirtyRateSet     bool
+	MemDirtyRate        uint64
+	DataTransferRateSet bool
+	DataTransferRate    float64
 }
