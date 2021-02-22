@@ -54,17 +54,17 @@ The amount of traffic that is being read and written in swap memory.
 #### kubevirt_migrate_vmi_data_remaining_bytes
 #### HELP kubevirt_migrate_vmi_data_remaining_bytes The remaining VM data to be migrated.
 
-The remaining old VM data to be migrated to the new VM. 
+The remaining Guest OS data to be migrated to the new VM. 
 
 #### kubevirt_migrate_vmi_data_processed_bytes
 #### HELP kubevirt_migrate_vmi_data_processed_bytes The total VM data processed and migrated.
 
-The total old VM data processed and migrated to the new VM. 
+The total Guest OS data processed and migrated to the new VM. 
 
 #### kubevirt_migrate_vmi_dirty_memory_rate_bytes
 #### HELP kubevirt_migrate_vmi_dirty_memory_rate_bytes The rate at which the memory is getting dirty in the VM being Migrated.
 
-The rate of memory being dirtied in the old VM.
+The rate of memory being dirtied in the Guest OS.
 
 Extra labels:
 * `type` - Whether the data is being transmitted or received. `in` when transmitting and `out` when receiving. 
@@ -151,7 +151,3 @@ A design proposal and its implementation history can be seen [here](https://docs
  # Other Metrics 
 ## kubevirt_vmi_outdated_count
 #### HELP kubevirt_vmi_outdated_count Indication for the number of VirtualMachineInstance workloads that are not running within the most up-to-date version of the virt-launcher environment.
-
- # Other Metrics 
-## kubevirt_migrate_vmi_data_transfer_rate_bytes
-#### HELP kubevirt_migrate_vmi_data_transfer_rate_bytes The rate at which the Data is transfered.

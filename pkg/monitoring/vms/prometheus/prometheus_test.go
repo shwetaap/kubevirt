@@ -262,32 +262,6 @@ var _ = Describe("Prometheus", func() {
 			Expect(dto.Gauge.GetValue()).To(BeEquivalentTo(float64(1024)))
 		})
 
-		It("should handle TransferDataRate metrics for VMs", func() {
-			ch := make(chan prometheus.Metric, 1)
-			defer close(ch)
-
-			ps := prometheusScraper{ch: ch}
-
-			vmStats := &stats.DomainStats{
-				Cpu:    &stats.DomainStatsCPU{},
-				Memory: &stats.DomainStatsMemory{},
-				MigrateInfo: &stats.DomainJobInfo{
-					DataTransferRateSet: true,
-					DataTransferRate:    1.0,
-				},
-			}
-			vmi := k6tv1.VirtualMachineInstance{}
-			ps.Report("test", &vmi, vmStats)
-
-			result := <-ch
-			dto := &io_prometheus_client.Metric{}
-			result.Write(dto)
-
-			Expect(result).ToNot(BeNil())
-			Expect(result.Desc().String()).To(ContainSubstring("kubevirt_migrate_vmi_data_transfer_rate_bytes"))
-			Expect(dto.Gauge.GetValue()).To(BeEquivalentTo(float64(1024)))
-		})
-
 		It("should handle vcpu metrics", func() {
 			ch := make(chan prometheus.Metric, 1)
 			defer close(ch)

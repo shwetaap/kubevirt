@@ -154,13 +154,10 @@ type DomainStatsMemory struct {
 // mimic existing structs, but data is taken from
 // DomainJobInfo
 type DomainJobInfo struct {
-	DataProcessedSet    bool
-	DataProcessed       uint64
-	OldDataProcessed    uint64
-	DataRemainingSet    bool
-	DataRemaining       uint64
-	MemDirtyRateSet     bool
-	MemDirtyRate        uint64
-	DataTransferRateSet bool
-	DataTransferRate    float64
+	DataProcessedSet bool
+	DataProcessed    uint64
+	DataRemainingSet bool
+	DataRemaining    uint64
+	MemDirtyRateSet  bool
+	MemDirtyRate     uint64
 }

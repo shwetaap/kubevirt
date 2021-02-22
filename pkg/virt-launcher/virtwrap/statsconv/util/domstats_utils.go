@@ -173,15 +173,12 @@ var Testdataexpected = `{
      "UnusedSet": false
    }, 
    "MigrateInfo": {
-     "OldDataProcessed": 0,
      "DataProcessed": 0,
      "DataProcessedSet": false,
      "DataRemaining": 0,
      "DataRemainingSet": false,
      "MemDirtyRate": 0,
-     "MemDirtyRateSet": false,
-     "DataTransferRateSet": false,
-     "DataTransferRate": 0.0
+     "MemDirtyRateSet": false
    },
    "Name": "testName", 
    "Net": [
