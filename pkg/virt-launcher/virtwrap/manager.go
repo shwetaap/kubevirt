@@ -703,7 +703,7 @@ func getVMIMigrationDataSize(vmi *v1.VirtualMachineInstance) int64 {
 func liveMigrationMonitor(vmi *v1.VirtualMachineInstance, l *LibvirtDomainManager, options *cmdclient.MigrationOptions, migrationErr chan error) {
 
 	logger := log.Log.Object(vmi)
-	migrateInfo := stats.DomainJobInfo{}
+	migrateInfo := stats.DomainJobInfo{OldDataProcessed: 0}
 	domName := api.VMINamespaceKeyFunc(vmi)
 	dom, err := l.virConn.LookupDomainByName(domName)
 	if err != nil {
@@ -783,9 +783,14 @@ monitorLoop:
 						l.migrateInfoStats.MemDirtyRate = jobStatsInfo.MemDirtyRate
 						l.migrateInfoStats.MemDirtyRateSet = jobStatsInfo.MemDirtyRateSet*/
 			l.migrateInfoStats = statsconv.Convert_libvirt_DomainJobInfo_To_stats_DomainJobInfo(jobStatsInfo)
+			l.migrateInfoStats.DataTransferRateSet = true
+			l.migrateInfoStats.DataTransferRate = float64(l.migrateInfoStats.DataProcessed-l.migrateInfoStats.OldDataProcessed) / float64(now-lastProgressUpdate)
 			log.Log.Infof("Debug Job Migrate stats-dataremaining: %d", l.migrateInfoStats.DataRemaining)
 			log.Log.Infof("Debug Job Migrate stats-dataprocessed: %d", l.migrateInfoStats.DataProcessed)
+			log.Log.Infof("Debug Job Migrate stats-dataprocessed: %d", l.migrateInfoStats.OldDataProcessed)
 			log.Log.Infof("Debug Job Migrate stats-memorydirtyrate: %d", l.migrateInfoStats.MemDirtyRate)
+			log.Log.Infof("Debug Job Migrate stats-datatransferrate: %f", l.migrateInfoStats.DataTransferRate)
+			l.migrateInfoStats.OldDataProcessed = l.migrateInfoStats.DataProcessed
 
 			if (progressWatermark == 0) ||
 				(progressWatermark > remainingData) {
@@ -850,6 +855,7 @@ monitorLoop:
 			l.migrateInfoStats.DataProcessed = jobStatsInfo.DataProcessed
 			l.migrateInfoStats.DataRemaining = jobStatsInfo.DataRemaining
 			l.migrateInfoStats.MemDirtyRate = jobStatsInfo.MemDirtyRate
+			l.migrateInfoStats.OldDataProcessed = l.migrateInfoStats.DataProcessed
 
 		case libvirt.DOMAIN_JOB_NONE:
 			logger.Info("Migration job didn't start yet")

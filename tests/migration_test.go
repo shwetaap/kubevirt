@@ -1385,6 +1385,96 @@ var _ = Describe("[Serial][rfe_id:393][crit:high][vendor:cnv-qe@redhat.com][leve
 				tests.WaitForVirtualMachineToDisappearWithTimeout(vmi, 240)
 			})
 
+			It("[test_id:] Derived Migration Metrics exposed to prometheus during VM migration", func() {
+				vmi := tests.NewRandomFedoraVMIWithGuestAgent()
+				vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse(fedoraVMSize)
+
+				var pod *k8sv1.Pod
+				var metricsIPs []string
+				var family k8sv1.IPFamily = k8sv1.IPv4Protocol
+
+				By("Starting the VirtualMachineInstance")
+				vmi = runVMIAndExpectLaunch(vmi, 240)
+
+				By("Checking that the VirtualMachineInstance console has expected output")
+				Expect(console.LoginToFedora(vmi)).To(Succeed())
+
+				// Need to wait for cloud init to finnish and start the agent inside the vmi.
+				tests.WaitAgentConnected(virtClient, vmi)
+
+				vmiNodeOrig := vmi.Status.NodeName
+				fmt.Fprintf(GinkgoWriter, "VM node [%s]:\n", vmiNodeOrig)
+				By("Finding the prometheus endpoint")
+				pod, err = kubecli.NewVirtHandlerClient(virtClient).Namespace(flags.KubeVirtInstallNamespace).ForNode(vmiNodeOrig).Pod()
+				Expect(err).ToNot(HaveOccurred(), "Should find the virt-handler pod")
+				fmt.Fprintf(GinkgoWriter, "Virt-handler pod [%s]:\n", pod)
+				for _, ip := range pod.Status.PodIPs {
+					metricsIPs = append(metricsIPs, ip.IP)
+				}
+
+				fmt.Fprintf(GinkgoWriter, "Metrics Ip [%s]:\n", metricsIPs)
+				runStressTest(vmi, stressdefaultVMSize)
+
+				// execute a migration, wait for finalized state
+				By("Starting the Migration")
+				migration := tests.NewRandomMigration(vmi.Name, vmi.Namespace)
+				migrationUID := runMigrationAndExpectFailure(migration, 180)
+
+				// check VMI, confirm migration state
+				confirmVMIPostMigrationFailed(vmi, migrationUID)
+
+				if family == k8sv1.IPv6Protocol {
+					libnet.SkipWhenNotDualStackCluster(virtClient)
+				}
+
+				ip := getSupportedIP(metricsIPs, family)
+
+				fmt.Fprintf(GinkgoWriter, "Ip [%s]:\n", ip)
+				By("Scraping the Prometheus endpoint")
+				var metrics map[string]float64
+				var lines []string
+
+				Eventually(func() map[string]float64 {
+					//out := getKubevirtVMMetrics(ip)
+					metricsURL := prepareMetricsURL(ip, 8443)
+					out, _, err := tests.ExecuteCommandOnPodV2(virtClient,
+						pod,
+						"virt-handler",
+						[]string{
+							"curl",
+							"-L",
+							"-k",
+							metricsURL,
+						})
+					Expect(err).ToNot(HaveOccurred())
+					lines = takeMetricsWithPrefix(out, "kubevirt_migrate_vmi_data_transfer_rate_bytes*")
+					metrics, err = parseMetricsToMap(lines)
+					Expect(err).ToNot(HaveOccurred())
+					return metrics
+				}, 30*time.Second, 2*time.Second).ShouldNot(BeEmpty())
+
+				// troubleshooting helper
+				fmt.Fprintf(GinkgoWriter, "metrics [%s]:\nlines=%s\n%#v\n", "kubevirt_migrate_vmi_data_transfer_rate_bytes", lines, metrics)
+				Expect(len(metrics)).To(BeNumerically(">=", float64(1.0)))
+				Expect(metrics).To(HaveLen(len(lines)))
+
+				By("Checking the collected metrics")
+				keys := getKeysFromMetrics(metrics)
+				for _, key := range keys {
+					value := metrics[key]
+					fmt.Fprintf(GinkgoWriter, "metric value was %f\n", value)
+					Expect(value).To(BeNumerically(">=", float64(0.0)))
+				}
+				//metrics := collectMetrics(ip, "kubevirt_vmi_memory_swap_")
+
+				// delete VMI
+				By("Deleting the VMI")
+				Expect(virtClient.VirtualMachineInstance(vmi.Namespace).Delete(vmi.Name, &metav1.DeleteOptions{})).To(Succeed())
+
+				By("Waiting for VMI to disappear")
+				tests.WaitForVirtualMachineToDisappearWithTimeout(vmi, 240)
+			})
+
 			It(" Should detect a failed migration", func() {
 				vmi := tests.NewRandomFedoraVMIWithGuestAgent()
 				vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse("1Gi")

@@ -151,3 +151,7 @@ A design proposal and its implementation history can be seen [here](https://docs
  # Other Metrics 
 ## kubevirt_vmi_outdated_count
 #### HELP kubevirt_vmi_outdated_count Indication for the number of VirtualMachineInstance workloads that are not running within the most up-to-date version of the virt-launcher environment.
+
+ # Other Metrics 
+## kubevirt_migrate_vmi_data_transfer_rate_bytes
+#### HELP kubevirt_migrate_vmi_data_transfer_rate_bytes The rate at which the Data is transfered.

@@ -105,6 +105,14 @@ func (metrics *vmiMetrics) updateMigrateInfo(jobInfo *stats.DomainJobInfo) {
 		)
 	}
 
+	if jobInfo.DataTransferRateSet {
+		metrics.pushCommonMetric(
+			"kubevirt_migrate_vmi_data_transfer_rate_bytes",
+			"The rate at which the Data is transfered.",
+			prometheus.GaugeValue,
+			jobInfo.DataTransferRate*1024,
+		)
+	}
 }
 
 func (metrics *vmiMetrics) updateMemory(mem *stats.DomainStatsMemory) {
